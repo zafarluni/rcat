@@ -1,5 +1,7 @@
 use clap::{App, Arg};
 use std::error::Error;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 type RcatResult<T> = Result<T, Box<dyn Error>>;
 
@@ -10,10 +12,29 @@ pub struct Config {
     number_nonblank_line: bool,
 }
 
-pub fn run() -> RcatResult<()> {
-    let config = get_args()?;
+pub fn run(config: Config) -> RcatResult<()> {
     for filename in config.files {
-        println!("{}", filename);
+        match open(&filename) {
+            Err(e) => eprint!("Failed to open {}:{}", filename, e),
+            Ok(file) => {
+                let mut number_non_blank = 0;
+                for (line_num, lines) in file.lines().enumerate() {
+                    let line = lines?;
+                    if config.number_lines {
+                        println!("{:>6} {}", line_num + 1, line);
+                    } else if config.number_nonblank_line {
+                        if line.is_empty() {
+                            println!();
+                        } else {
+                            number_non_blank += 1;
+                            println!("{:>6} {}", number_non_blank, line);
+                        }
+                    } else {
+                        println!("{}", line);
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -30,6 +51,7 @@ pub fn get_args() -> RcatResult<Config> {
                 .value_name("Files")
                 .multiple(true)
                 .default_value("-")
+                .index(1)
                 .help("Input file(s)"),
         )
         .arg(
@@ -54,4 +76,11 @@ pub fn get_args() -> RcatResult<Config> {
         number_lines: matches.is_present("number"),
         number_nonblank_line: matches.is_present("number_nonblank"),
     })
+}
+
+fn open(filename: &str) -> RcatResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
 }
